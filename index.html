@@ -45,6 +45,12 @@
         <h2 id="entries-heading">Feedings</h2>
         <div class="totals" id="grand-totals"></div>
       </div>
+      <div class="toolbar">
+        <button type="button" id="export-btn" class="secondary">⬇ Export CSV</button>
+        <button type="button" id="import-btn" class="secondary">⬆ Import CSV</button>
+        <input type="file" id="import-file" accept=".csv,text/csv" hidden />
+      </div>
+      <p id="import-msg" class="import-msg" role="status" hidden></p>
       <div class="table-wrap">
         <table id="entries-table">
           <thead>

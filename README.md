@@ -13,7 +13,23 @@ step, no server, no dependencies — just open it in a browser.
 - **Add, edit, and delete** entries.
 - **Local persistence** — data is saved in the browser's `localStorage`, so it
   survives page reloads on the same device/browser.
+- **CSV import / export** — back up your data or move it between devices.
 - Input validation (e.g. not-consumed cannot exceed provided).
+
+## CSV format
+
+Export produces a file named `baby-food-tracker-YYYY-MM-DD.csv` with these columns:
+
+```csv
+Date,Time,Provided (ml),Not consumed (ml),Consumed (ml)
+2026-06-07,08:30,120,20,100
+```
+
+Import reads the same layout. The **Consumed** column is optional on import —
+it's always recalculated as `provided − not consumed`. The header row is
+optional, dates may be `YYYY-MM-DD` or `D.M.YYYY` / `D/M/YYYY`, and invalid rows
+are skipped. When you already have entries, import lets you choose to **add** to
+them or **replace** them.
 
 ## Usage
 

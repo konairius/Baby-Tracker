@@ -33,6 +33,11 @@
 
   const clearBtn = document.getElementById("clear-btn");
 
+  const exportBtn = document.getElementById("export-btn");
+  const importBtn = document.getElementById("import-btn");
+  const importFile = document.getElementById("import-file");
+  const importMsg = document.getElementById("import-msg");
+
   // --- Persistence ---
   function load() {
     try {
@@ -308,6 +313,224 @@
       render();
       resetForm();
     }
+  });
+
+  // --- CSV import / export ---
+  const CSV_HEADERS = [
+    "Date",
+    "Time",
+    "Provided (ml)",
+    "Not consumed (ml)",
+    "Consumed (ml)",
+  ];
+
+  function showImportMsg(msg, type) {
+    importMsg.textContent = msg;
+    importMsg.className = "import-msg " + (type || "");
+    importMsg.hidden = false;
+  }
+
+  // Quote a CSV field if it contains comma, quote, or newline.
+  function csvCell(value) {
+    const s = String(value);
+    if (/[",\n\r]/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function exportCsv() {
+    if (entries.length === 0) {
+      showImportMsg("Nothing to export yet — add a feeding first.", "error");
+      return;
+    }
+    const rows = [CSV_HEADERS.join(",")];
+    for (const entry of sortedEntries()) {
+      rows.push(
+        [
+          entry.date,
+          entry.time,
+          entry.provided,
+          entry.notConsumed,
+          consumed(entry),
+        ]
+          .map(csvCell)
+          .join(",")
+      );
+    }
+    const csv = rows.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `baby-food-tracker-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showImportMsg(`Exported ${entries.length} feeding(s).`, "success");
+  }
+
+  // Parse CSV text into an array of string-arrays (handles quotes/newlines).
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let inQuotes = false;
+    // Strip a UTF-8 BOM if present.
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += c;
+        }
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === ",") {
+        row.push(field);
+        field = "";
+      } else if (c === "\n" || c === "\r") {
+        // Handle CRLF without producing an empty row.
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field);
+        field = "";
+        rows.push(row);
+        row = [];
+      } else {
+        field += c;
+      }
+    }
+    // Flush the final field/row if the file didn't end with a newline.
+    if (field !== "" || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function normalizeDate(value) {
+    const v = value.trim();
+    // Already ISO YYYY-MM-DD.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    // Accept D/M/YYYY or D.M.YYYY by reordering to ISO.
+    const m = v.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+    if (m) {
+      const pad = (n) => n.padStart(2, "0");
+      return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    }
+    return null;
+  }
+
+  function normalizeTime(value) {
+    const v = value.trim();
+    const m = v.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const h = m[1].padStart(2, "0");
+    return `${h}:${m[2]}`;
+  }
+
+  function importCsv(text) {
+    const rows = parseCsv(text).filter((r) => r.some((c) => c.trim() !== ""));
+    if (rows.length === 0) {
+      showImportMsg("That file is empty.", "error");
+      return;
+    }
+
+    // Skip the header row if the first cell isn't a date.
+    let start = 0;
+    if (!normalizeDate(rows[0][0] || "")) start = 1;
+
+    const imported = [];
+    let skipped = 0;
+
+    for (let i = start; i < rows.length; i++) {
+      const cols = rows[i];
+      const date = normalizeDate(cols[0] || "");
+      const time = normalizeTime(cols[1] || "");
+      const provided = parseFloat(cols[2]);
+      const notConsumed = parseFloat(cols[3]);
+
+      if (
+        !date ||
+        !time ||
+        !Number.isFinite(provided) ||
+        provided < 0 ||
+        !Number.isFinite(notConsumed) ||
+        notConsumed < 0 ||
+        notConsumed > provided
+      ) {
+        skipped++;
+        continue;
+      }
+      imported.push({ id: uid(), date, time, provided, notConsumed });
+    }
+
+    if (imported.length === 0) {
+      showImportMsg(
+        "No valid rows found. Expected columns: Date, Time, Provided, Not consumed.",
+        "error"
+      );
+      return;
+    }
+
+    const replace =
+      entries.length > 0 &&
+      !confirm(
+        `Import ${imported.length} feeding(s)?\n\n` +
+          "OK = add to your existing entries\n" +
+          "Cancel = replace all existing entries"
+      );
+
+    if (replace) {
+      entries = imported;
+    } else {
+      entries = entries.concat(imported);
+    }
+
+    save();
+    render();
+    const note = skipped > 0 ? ` (${skipped} row(s) skipped)` : "";
+    showImportMsg(
+      `Imported ${imported.length} feeding(s)${note}.`,
+      "success"
+    );
+  }
+
+  exportBtn.addEventListener("click", exportCsv);
+
+  importBtn.addEventListener("click", function () {
+    importMsg.hidden = true;
+    importFile.click();
+  });
+
+  importFile.addEventListener("change", function () {
+    const file = importFile.files && importFile.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function () {
+      try {
+        importCsv(String(reader.result));
+      } catch (err) {
+        console.error("CSV import failed:", err);
+        showImportMsg("Could not read that file.", "error");
+      }
+    };
+    reader.onerror = function () {
+      showImportMsg("Could not read that file.", "error");
+    };
+    reader.readAsText(file);
+    // Reset so selecting the same file again re-triggers change.
+    importFile.value = "";
   });
 
   // --- Init ---

@@ -16,6 +16,8 @@ step, no server, no dependencies — just open it in a browser.
 - **CSV import / export** — back up your data or move it between devices.
 - **Printable tracking sheet + photo import** — print a paper sheet, fill it in by
   hand, then photograph it; the rows are read **on your device** (no account or key).
+- **Encrypted sharing / multi-device sync** (optional) — share one baby's log with
+  family via a private link; everyone stays in sync, end-to-end encrypted.
 - Input validation (e.g. not-consumed cannot exceed provided).
 
 ## Track by hand, then import from a photo
@@ -40,6 +42,27 @@ Notes:
   own date use the "date on sheet" value.
 
 The PDF generator is dependency-free (it emits raw PDF), so it works offline too.
+
+## Sharing & sync (end-to-end encrypted)
+
+Share one baby's log across phones so both parents (and caregivers) see the same data.
+
+**How it works for users:** click **🔗 Share / sync → Create a shared space**. You get a
+private link; send it to family. Anyone who opens it syncs the same log. Changes merge
+automatically (per-entry, newest wins), so two people editing won't clobber each other.
+
+**Security model:**
+- Each shared space has a random id **and** a random AES-256-GCM key, both living only in
+  the link's URL `#fragment` — which browsers never send to the server.
+- The browser encrypts every change before upload and decrypts after download. The backend
+  stores only ciphertext + a version number; it **cannot read your data** (zero-knowledge).
+- Anyone with the link has full access (no accounts). To revoke, create a new space and
+  re-share.
+
+**Setup (one-time, by the site owner):** sharing is **off until you deploy the backend** —
+a tiny Cloudflare Worker + KV store. Follow [`worker/README.md`](worker/README.md) (about 5
+minutes), then set the `SYNC_URL` constant at the top of [`sync.js`](sync.js) to your
+Worker's URL and push. Until then, the Share button explains that sharing isn't enabled.
 
 ## CSV format
 
@@ -75,6 +98,8 @@ python3 -m http.server 8000
 | `styles.css` | Styling |
 | `app.js` | Logic: state, persistence, validation, rendering, CSV, photo import |
 | `sheet-pdf.js` | Dependency-free generator for the printable tracking sheet |
+| `sync.js` | End-to-end encrypted sharing/sync client (WebCrypto + merge) |
+| `worker/` | Cloudflare Worker backend (encrypted blob store) + deploy guide |
 
 ## Notes
 

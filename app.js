@@ -7,7 +7,7 @@
 
   const STORAGE_KEY = "baby-food-tracker.entries";
 
-  /** @typedef {{id: string, date: string, time: string, provided: number, notConsumed: number}} Entry */
+  /** @typedef {{id: string, date: string, time: string, provided: number, notConsumed: number, updatedAt: number, deleted?: boolean}} Entry */
 
   /** @type {Entry[]} */
   let entries = load();
@@ -50,13 +50,28 @@
   const addReviewedBtn = document.getElementById("add-reviewed");
   const discardReviewedBtn = document.getElementById("discard-reviewed");
 
+  const shareBtn = document.getElementById("share-btn");
+  const sharePanel = document.getElementById("share-panel");
+  const shareIntro = document.getElementById("share-intro");
+  const createSpaceBtn = document.getElementById("create-space");
+  const shareStatusEl = document.getElementById("share-status");
+  const shareActive = document.getElementById("share-active");
+  const shareLinkInput = document.getElementById("share-link");
+  const copyLinkBtn = document.getElementById("copy-link");
+  const leaveShareBtn = document.getElementById("leave-share");
+
   // --- Persistence ---
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      // Migrate older entries that predate sync (no updatedAt field).
+      const base = Date.now();
+      return parsed.map((e) =>
+        typeof e.updatedAt === "number" ? e : Object.assign({ updatedAt: base }, e)
+      );
     } catch (err) {
       console.error("Failed to load entries:", err);
       return [];
@@ -69,6 +84,26 @@
     } catch (err) {
       console.error("Failed to save entries:", err);
     }
+  }
+
+  // Entries not tombstoned by a delete.
+  function activeEntries() {
+    return entries.filter((e) => !e.deleted);
+  }
+
+  // Persist + re-render, then let the sync layer (if active) push the change.
+  function commit() {
+    save();
+    render();
+    if (window.BabySync && window.BabySync.localChanged) window.BabySync.localChanged();
+  }
+
+  // Called by the sync layer when a merged set arrives from the server.
+  // Replaces the local store without re-triggering a push.
+  function applyMerged(merged) {
+    entries = merged;
+    save();
+    render();
   }
 
   // --- Helpers ---
@@ -108,13 +143,11 @@
     formError.hidden = true;
   }
 
-  // Sort newest first by date+time.
+  // Active entries, sorted newest first by date+time.
   function sortedEntries() {
-    return entries
-      .slice()
-      .sort((a, b) =>
-        (b.date + "T" + b.time).localeCompare(a.date + "T" + a.time)
-      );
+    return activeEntries().sort((a, b) =>
+      (b.date + "T" + b.time).localeCompare(a.date + "T" + a.time)
+    );
   }
 
   // --- Rendering ---
@@ -126,7 +159,7 @@
   function renderEntries() {
     entriesBody.innerHTML = "";
 
-    if (entries.length === 0) {
+    if (activeEntries().length === 0) {
       emptyState.hidden = false;
       grandTotals.innerHTML = "";
       return;
@@ -163,7 +196,8 @@
   function renderSummary() {
     summaryBody.innerHTML = "";
 
-    if (entries.length === 0) {
+    const active = activeEntries();
+    if (active.length === 0) {
       summaryEmpty.hidden = false;
       return;
     }
@@ -171,7 +205,7 @@
 
     // Aggregate by date.
     const byDate = new Map();
-    for (const entry of entries) {
+    for (const entry of active) {
       const agg = byDate.get(entry.date) || {
         count: 0,
         provided: 0,
@@ -289,13 +323,13 @@
         entry.time = time;
         entry.provided = provided;
         entry.notConsumed = notConsumed;
+        entry.updatedAt = Date.now();
       }
     } else {
-      entries.push({ id: uid(), date, time, provided, notConsumed });
+      entries.push({ id: uid(), date, time, provided, notConsumed, updatedAt: Date.now() });
     }
 
-    save();
-    render();
+    commit();
     resetForm();
   });
 
@@ -309,20 +343,29 @@
       startEdit(id);
     } else if (btn.classList.contains("delete")) {
       if (confirm("Delete this feeding entry?")) {
-        entries = entries.filter((en) => en.id !== id);
+        // Tombstone (not remove) so the deletion can sync to other devices.
+        const entry = entries.find((en) => en.id === id);
+        if (entry) {
+          entry.deleted = true;
+          entry.updatedAt = Date.now();
+        }
         if (editingId === id) resetForm();
-        save();
-        render();
+        commit();
       }
     }
   });
 
   clearBtn.addEventListener("click", function () {
-    if (entries.length === 0) return;
+    if (activeEntries().length === 0) return;
     if (confirm("Delete ALL feeding entries? This cannot be undone.")) {
-      entries = [];
-      save();
-      render();
+      const now = Date.now();
+      for (const e of entries) {
+        if (!e.deleted) {
+          e.deleted = true;
+          e.updatedAt = now;
+        }
+      }
+      commit();
       resetForm();
     }
   });
@@ -352,7 +395,7 @@
   }
 
   function exportCsv() {
-    if (entries.length === 0) {
+    if (activeEntries().length === 0) {
       showImportMsg("Nothing to export yet — add a feeding first.", "error");
       return;
     }
@@ -381,7 +424,7 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showImportMsg(`Exported ${entries.length} feeding(s).`, "success");
+    showImportMsg(`Exported ${activeEntries().length} feeding(s).`, "success");
   }
 
   // Parse CSV text into an array of string-arrays (handles quotes/newlines).
@@ -484,7 +527,7 @@
         skipped++;
         continue;
       }
-      imported.push({ id: uid(), date, time, provided, notConsumed });
+      imported.push({ id: uid(), date, time, provided, notConsumed, updatedAt: Date.now() });
     }
 
     if (imported.length === 0) {
@@ -496,7 +539,7 @@
     }
 
     const replace =
-      entries.length > 0 &&
+      activeEntries().length > 0 &&
       !confirm(
         `Import ${imported.length} feeding(s)?\n\n` +
           "OK = add to your existing entries\n" +
@@ -504,13 +547,18 @@
       );
 
     if (replace) {
-      entries = imported;
-    } else {
-      entries = entries.concat(imported);
+      // Tombstone existing entries (so the replacement syncs) then add the new ones.
+      const now = Date.now();
+      for (const e of entries) {
+        if (!e.deleted) {
+          e.deleted = true;
+          e.updatedAt = now;
+        }
+      }
     }
+    entries = entries.concat(imported);
 
-    save();
-    render();
+    commit();
     const note = skipped > 0 ? ` (${skipped} row(s) skipped)` : "";
     showImportMsg(
       `Imported ${imported.length} feeding(s)${note}.`,
@@ -799,15 +847,14 @@
         skipped++;
         continue;
       }
-      entries.push({ id: uid(), date, time, provided, notConsumed });
+      entries.push({ id: uid(), date, time, provided, notConsumed, updatedAt: Date.now() });
       added++;
     }
     if (added === 0) {
       showPhotoStatus("No valid rows to add — check the highlighted fields.", "error");
       return;
     }
-    save();
-    render();
+    commit();
     reviewPanel.hidden = true;
     reviewBody.innerHTML = "";
     photoFile.value = "";
@@ -821,7 +868,104 @@
     showPhotoStatus("Discarded.", "info");
   });
 
+  // --- Sharing / sync UI ---
+  function statusLabel(s) {
+    switch (s) {
+      case "syncing": return "Syncing…";
+      case "synced": return "✓ Synced";
+      case "offline": return "⚠ Offline — will retry";
+      default: return "";
+    }
+  }
+
+  function renderShare(state) {
+    if (!state) {
+      state = window.BabySync
+        ? window.BabySync.state()
+        : { configured: false, sharing: false, status: "off" };
+    }
+
+    if (!state.configured) {
+      shareIntro.hidden = false;
+      shareIntro.textContent =
+        "Online sharing isn't enabled on this site yet. Everything stays on this device.";
+      createSpaceBtn.hidden = true;
+      shareActive.hidden = true;
+      shareStatusEl.textContent = "";
+      return;
+    }
+
+    if (!state.sharing) {
+      shareIntro.hidden = false;
+      shareIntro.textContent =
+        "Sync this baby's log across phones. This uploads an end-to-end encrypted copy and gives you a private link to share with family — the server can't read your data.";
+      createSpaceBtn.hidden = false;
+      shareActive.hidden = true;
+    } else {
+      shareIntro.hidden = true;
+      createSpaceBtn.hidden = true;
+      shareActive.hidden = false;
+      shareLinkInput.value = window.BabySync.shareLink() || "";
+    }
+    shareStatusEl.textContent = statusLabel(state.status);
+    shareStatusEl.className = "share-status " + (state.status || "");
+  }
+
+  shareBtn.addEventListener("click", function () {
+    sharePanel.hidden = !sharePanel.hidden;
+    if (!sharePanel.hidden) {
+      renderShare();
+      sharePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+
+  createSpaceBtn.addEventListener("click", async function () {
+    if (!window.BabySync) return;
+    createSpaceBtn.disabled = true;
+    shareStatusEl.textContent = "Creating…";
+    try {
+      await window.BabySync.createSpace();
+    } catch (err) {
+      console.error("Create space failed:", err);
+    }
+    createSpaceBtn.disabled = false;
+    renderShare();
+  });
+
+  copyLinkBtn.addEventListener("click", async function () {
+    try {
+      await navigator.clipboard.writeText(shareLinkInput.value);
+      copyLinkBtn.textContent = "Copied!";
+      setTimeout(function () {
+        copyLinkBtn.textContent = "Copy";
+      }, 1500);
+    } catch (err) {
+      shareLinkInput.select();
+    }
+  });
+
+  leaveShareBtn.addEventListener("click", function () {
+    if (!window.BabySync) return;
+    if (
+      confirm(
+        "Stop syncing on this device? Your entries stay here, but changes won't sync until you open the share link again."
+      )
+    ) {
+      window.BabySync.leave();
+      renderShare();
+    }
+  });
+
   // --- Init ---
   setDefaults();
   render();
+  if (window.BabySync) {
+    window.BabySync.init({
+      getEntries: function () {
+        return entries;
+      },
+      applyMerged: applyMerged,
+      onStatus: renderShare,
+    });
+  }
 })();

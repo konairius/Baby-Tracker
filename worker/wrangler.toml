@@ -1,0 +1,9 @@
+name = "baby-tracker-sync"
+main = "sync-worker.js"
+compatibility_date = "2024-11-01"
+
+# Created by: npx wrangler kv namespace create BABY_KV
+# Paste the printed id below.
+kv_namespaces = [
+  { binding = "BABY_KV", id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE" }
+]

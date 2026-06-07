@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Baby Food Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
   <header>
@@ -50,9 +50,32 @@
         <button type="button" id="import-btn" class="secondary">⬆ Import CSV</button>
         <button type="button" id="pdf-btn" class="secondary">🖨 Tracking sheet (PDF)</button>
         <button type="button" id="photo-btn" class="secondary">📷 Import from photo</button>
+        <button type="button" id="share-btn" class="secondary">🔗 Share / sync</button>
         <input type="file" id="import-file" accept=".csv,text/csv" hidden />
       </div>
       <p id="import-msg" class="import-msg" role="status" hidden></p>
+
+      <div id="share-panel" class="share-panel" hidden>
+        <p id="share-intro" class="hint"></p>
+        <div class="photo-row">
+          <button type="button" id="create-space">Create a shared space</button>
+          <span id="share-status" class="share-status" aria-live="polite"></span>
+        </div>
+        <div id="share-active" hidden>
+          <p class="hint">
+            Send this private link to family. Anyone with it can view and add feedings, and
+            everyone stays in sync. The data is <strong>end-to-end encrypted</strong> — the
+            server only ever stores scrambled text it can't read.
+          </p>
+          <div class="photo-row">
+            <input type="text" id="share-link" readonly />
+            <button type="button" id="copy-link">Copy</button>
+          </div>
+          <div class="photo-row">
+            <button type="button" id="leave-share" class="secondary">Stop syncing on this device</button>
+          </div>
+        </div>
+      </div>
 
       <div id="photo-panel" class="photo-panel" hidden>
         <p class="hint">
@@ -135,7 +158,8 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script src="sheet-pdf.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="sheet-pdf.js?v=5"></script>
+  <script src="sync.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

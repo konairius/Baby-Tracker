@@ -54,3 +54,18 @@ python3 -m http.server 8000
 
 All measurements are in milliliters (ml). Data lives only in your browser; use
 the **Clear all data** link in the footer to wipe it.
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0** — see the
+[`LICENSE`](LICENSE) file for the full text.
+
+Copyright (C) 2026 konairius
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+

@@ -214,21 +214,6 @@ button.secondary:hover { background: #f0f2f7; }
 .photo-status.success { color: var(--good); background: rgba(47, 158, 107, 0.1); }
 .photo-status.error { color: var(--danger); background: rgba(217, 83, 79, 0.1); }
 
-.key-ready-line {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--good);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.key-ready-line .link-btn {
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
 #review h3 { margin: 0.5rem 0; font-size: 1rem; }
 
 #review-table input {

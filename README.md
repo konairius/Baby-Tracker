@@ -15,7 +15,7 @@ step, no server, no dependencies — just open it in a browser.
   survives page reloads on the same device/browser.
 - **CSV import / export** — back up your data or move it between devices.
 - **Printable tracking sheet + photo import** — print a paper sheet, fill it in by
-  hand, then photograph it and let Claude read the rows into the app.
+  hand, then photograph it; the rows are read **on your device** (no account or key).
 - Input validation (e.g. not-consumed cannot exceed provided).
 
 ## Track by hand, then import from a photo
@@ -24,17 +24,20 @@ For pen-and-paper tracking:
 
 1. Click **🖨 Tracking sheet (PDF)** to download a printable A4 sheet, and print it.
 2. Fill in feedings by hand during the day (Date, Time, Provided, Not consumed).
-3. Click **📷 Import from photo**. The first time, paste your
-   [Anthropic API key](https://console.anthropic.com/settings/keys) once and hit **Save** —
-   after that the app just shows "✓ Ready" and you only pick a photo.
-4. Snap/upload a photo of the sheet and click **Read photo**. The app transcribes the
-   rows; **review and edit** them, then click **Add to log**.
+3. Click **📷 Import from photo**, set the **date on the sheet**, then choose/snap a
+   photo and click **Read photo**.
+4. The app reads the sheet and fills in a table; **review and edit** the rows, then
+   click **Add to log**.
 
 Notes:
-- The key (saved only on your device) and the photo are sent **directly to Anthropic**
-  from your browser — no server is involved. Calls are billed to your Anthropic account.
-- Handwriting recognition isn't perfect — always review before adding.
-- The photo is downscaled in-browser before upload to keep cost and size reasonable.
+- **No account, key, or sign-up needed**, and your **photo never leaves your device** —
+  text recognition (via [Tesseract.js](https://github.com/naptha/tesseract.js)) runs
+  entirely in your browser.
+- The recognizer downloads from a CDN the first time, so the **first** photo read needs
+  an internet connection; after that it's cached by the browser.
+- Handwriting recognition is imperfect — write digits clearly, photograph the sheet
+  straight and well-lit, and **always check each row before adding**. Rows without their
+  own date use the "date on sheet" value.
 
 The PDF generator is dependency-free (it emits raw PDF), so it works offline too.
 

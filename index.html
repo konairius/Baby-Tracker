@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Baby Food Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <header>
@@ -55,30 +55,19 @@
       <p id="import-msg" class="import-msg" role="status" hidden></p>
 
       <div id="photo-panel" class="photo-panel" hidden>
-        <div id="key-setup">
-          <p class="hint">
-            <strong>One-time setup.</strong> Paste an Anthropic API key so the app can read your
-            photos. The photo and key are sent directly to Anthropic to transcribe the sheet; the
-            key is saved only on this device.
-            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">How do I get a key?</a>
-          </p>
-          <div class="photo-row">
-            <input type="password" id="api-key" placeholder="Paste your key (starts with sk-ant-)" autocomplete="off" />
-            <button type="button" id="save-key">Save</button>
-          </div>
+        <p class="hint">
+          Reads the sheet <strong>on your device</strong> — your photo is never uploaded anywhere, and
+          no account or key is needed. Take a straight, well-lit photo of the filled sheet.
+          Handwriting reading isn't perfect, so please check every row before adding.
+        </p>
+        <div class="photo-row">
+          <label for="sheet-date">Date on sheet</label>
+          <input type="date" id="sheet-date" />
         </div>
-
-        <div id="key-ready" hidden>
-          <p class="key-ready-line">
-            ✓ Ready.
-            <button type="button" id="change-key" class="link-btn">Change key</button>
-          </p>
-          <div class="photo-row">
-            <input type="file" id="photo-file" accept="image/*" capture="environment" />
-            <button type="button" id="read-photo">📷 Read photo</button>
-          </div>
+        <div class="photo-row">
+          <input type="file" id="photo-file" accept="image/*" capture="environment" />
+          <button type="button" id="read-photo">📷 Read photo</button>
         </div>
-
         <p id="photo-status" class="photo-status" role="status" hidden></p>
 
         <div id="review" hidden>
@@ -145,7 +134,8 @@
     <p>Data is stored locally in your browser. <button type="button" id="clear-btn" class="link-btn">Clear all data</button></p>
   </footer>
 
-  <script src="sheet-pdf.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <script src="sheet-pdf.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

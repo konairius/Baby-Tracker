@@ -41,11 +41,7 @@
   const pdfBtn = document.getElementById("pdf-btn");
   const photoBtn = document.getElementById("photo-btn");
   const photoPanel = document.getElementById("photo-panel");
-  const keySetup = document.getElementById("key-setup");
-  const keyReady = document.getElementById("key-ready");
-  const apiKeyInput = document.getElementById("api-key");
-  const saveKeyBtn = document.getElementById("save-key");
-  const changeKeyBtn = document.getElementById("change-key");
+  const sheetDate = document.getElementById("sheet-date");
   const photoFile = document.getElementById("photo-file");
   const readPhotoBtn = document.getElementById("read-photo");
   const photoStatus = document.getElementById("photo-status");
@@ -53,10 +49,6 @@
   const reviewBody = document.getElementById("review-body");
   const addReviewedBtn = document.getElementById("add-reviewed");
   const discardReviewedBtn = document.getElementById("discard-reviewed");
-
-  const KEY_STORAGE = "baby-food-tracker.apiKey";
-  // Single fixed model — chosen for best handwriting accuracy. No UI needed.
-  const OCR_MODEL = "claude-opus-4-8";
 
   // --- Persistence ---
   function load() {
@@ -570,77 +562,34 @@
     URL.revokeObjectURL(url);
   });
 
-  // --- Photo import (OCR via the Claude API) ---
+  // --- Photo import (on-device OCR with Tesseract.js) ---
   function showPhotoStatus(msg, type) {
     photoStatus.textContent = msg;
     photoStatus.className = "photo-status " + (type || "");
     photoStatus.hidden = false;
   }
 
-  function storedKey() {
-    try {
-      return (localStorage.getItem(KEY_STORAGE) || "").trim();
-    } catch (err) {
-      return "";
-    }
-  }
-
-  // Show the one-time key setup, or the "ready" view once a key exists.
-  function refreshKeyView() {
-    const hasKey = storedKey().length > 0;
-    keySetup.hidden = hasKey;
-    keyReady.hidden = !hasKey;
-    if (!hasKey) apiKeyInput.value = "";
+  function today() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   }
 
   photoBtn.addEventListener("click", function () {
     photoPanel.hidden = !photoPanel.hidden;
     if (!photoPanel.hidden) {
-      refreshKeyView();
+      if (!sheetDate.value) sheetDate.value = today();
       photoPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   });
 
-  saveKeyBtn.addEventListener("click", function () {
-    const key = apiKeyInput.value.trim();
-    if (!key) {
-      showPhotoStatus("Please paste your key first.", "error");
-      return;
-    }
-    try {
-      localStorage.setItem(KEY_STORAGE, key);
-    } catch (err) {
-      showPhotoStatus("Could not save the key on this device.", "error");
-      return;
-    }
-    refreshKeyView();
-    showPhotoStatus("Saved — you can now read photos.", "success");
-  });
-
-  changeKeyBtn.addEventListener("click", function () {
-    keySetup.hidden = false;
-    keyReady.hidden = true;
-    apiKeyInput.value = storedKey();
-    apiKeyInput.focus();
-  });
-
-  // Downscale the photo client-side to keep upload size and token cost sane,
-  // and normalize to JPEG.
-  function fileToDownscaledJpeg(file, maxDim, quality) {
+  function loadImage(file) {
     return new Promise(function (resolve, reject) {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = function () {
         URL.revokeObjectURL(url);
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        resolve({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg" });
+        resolve(img);
       };
       img.onerror = function () {
         URL.revokeObjectURL(url);
@@ -650,94 +599,117 @@
     });
   }
 
-  function today() {
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  }
+  // Downscale, grayscale, and Otsu-threshold the photo to clean black/white —
+  // Tesseract reads high-contrast images far better than raw phone photos.
+  function preprocess(img, maxDim) {
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
 
-  async function callClaudeOcr(base64, mediaType, apiKey) {
-    const schema = {
-      type: "object",
-      properties: {
-        entries: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              date: { type: "string", description: "ISO date, YYYY-MM-DD" },
-              time: { type: "string", description: "24-hour time, HH:MM" },
-              provided: { type: "number", description: "millilitres provided" },
-              notConsumed: {
-                type: "number",
-                description: "millilitres left over / not consumed",
-              },
-            },
-            required: ["date", "time", "provided", "notConsumed"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["entries"],
-      additionalProperties: false,
-    };
-
-    const prompt =
-      "This image is a handwritten baby feeding tracker sheet. Each filled row " +
-      "records one feeding with columns: Date, Time, Provided (ml), and Not " +
-      "consumed (ml) (the amount left over). Extract every filled-in row. Rules: " +
-      "dates as YYYY-MM-DD; if a row omits the date, use the sheet's date header " +
-      "or the date from adjacent rows; if the year is missing assume " +
-      today() +
-      ". Times as 24-hour HH:MM. Amounts are millilitres as plain numbers. If " +
-      "'Not consumed' is blank, use 0. Skip the header row and any empty rows. " +
-      "Today's date is " +
-      today() +
-      ".";
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: OCR_MODEL,
-        max_tokens: 8000,
-        output_config: { format: { type: "json_schema", schema: schema } },
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: base64 },
-              },
-              { type: "text", text: prompt },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!res.ok) {
-      let detail = "";
-      try {
-        const errBody = await res.json();
-        detail = (errBody.error && errBody.error.message) || "";
-      } catch (e) {
-        /* ignore */
-      }
-      throw new Error("API error " + res.status + (detail ? ": " + detail : ""));
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const hist = new Array(256).fill(0);
+    const gray = new Uint8ClampedArray(w * h);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+      gray[p] = g;
+      hist[g]++;
     }
 
-    const data = await res.json();
-    const textBlock = (data.content || []).find((b) => b.type === "text");
-    if (!textBlock) throw new Error("No text returned by the model.");
-    const parsed = JSON.parse(textBlock.text);
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
+    // Otsu threshold.
+    const total = w * h;
+    let sum = 0;
+    for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sumB = 0;
+    let wB = 0;
+    let maxVar = 0;
+    let thr = 127;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (wB === 0) continue;
+      const wF = total - wB;
+      if (wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const between = wB * wF * (mB - mF) * (mB - mF);
+      if (between > maxVar) {
+        maxVar = between;
+        thr = t;
+      }
+    }
+
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const v = gray[p] > thr ? 255 : 0;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
+  async function ocrImage(canvas, onProgress) {
+    const worker = await Tesseract.createWorker("eng", 1, {
+      logger: function (m) {
+        if (m.status === "recognizing text" && onProgress) onProgress(m.progress);
+      },
+    });
+    await worker.setParameters({
+      tessedit_char_whitelist: "0123456789:/.- ",
+      tessedit_pageseg_mode: "6",
+    });
+    const result = await worker.recognize(canvas);
+    await worker.terminate();
+    return (result && result.data && result.data.text) || "";
+  }
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  // Turn recognized text into candidate rows: per line, pull a time, an
+  // optional date, then remaining numbers as provided / not consumed. Rows
+  // without a date fall back to the sheet date.
+  function parseRows(text, fallbackDate) {
+    const rows = [];
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (!/\d/.test(line)) continue;
+
+      const tm = line.match(/(\d{1,2}):(\d{2})/);
+      const time = tm ? pad2(tm[1]) + ":" + tm[2] : "";
+
+      let date = "";
+      let dm = line.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (dm) {
+        date = dm[1] + "-" + pad2(dm[2]) + "-" + pad2(dm[3]);
+      } else {
+        dm = line.match(/(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})/);
+        if (dm) {
+          let y = dm[3];
+          if (y.length === 2) y = "20" + y;
+          date = y + "-" + pad2(dm[2]) + "-" + pad2(dm[1]);
+        }
+      }
+
+      let rest = line;
+      if (tm) rest = rest.replace(tm[0], " ");
+      if (dm) rest = rest.replace(dm[0], " ");
+      const nums = (rest.match(/\d+/g) || []).map((s) => parseInt(s, 10));
+      const provided = nums.length > 0 ? nums[0] : "";
+      const notConsumed = nums.length > 1 ? nums[1] : 0;
+
+      if (time === "" && provided === "") continue;
+      rows.push({
+        date: date || fallbackDate || "",
+        time: time,
+        provided: provided,
+        notConsumed: notConsumed,
+      });
+    }
+    return rows;
   }
 
   function renderReview(rows) {
@@ -748,7 +720,7 @@
         <td><input type="date" class="r-date" value="${row.date || ""}" /></td>
         <td><input type="time" class="r-time" value="${row.time || ""}" /></td>
         <td class="num"><input type="number" min="0" step="1" class="r-provided" value="${
-          row.provided != null ? row.provided : ""
+          row.provided !== "" && row.provided != null ? row.provided : ""
         }" /></td>
         <td class="num"><input type="number" min="0" step="1" class="r-notconsumed" value="${
           row.notConsumed != null ? row.notConsumed : 0
@@ -763,30 +735,38 @@
   }
 
   readPhotoBtn.addEventListener("click", async function () {
-    const apiKey = storedKey();
     const file = photoFile.files && photoFile.files[0];
-    if (!apiKey) {
-      refreshKeyView();
-      showPhotoStatus("Please add your API key first.", "error");
-      return;
-    }
     if (!file) {
       showPhotoStatus("Choose a photo of the sheet first.", "error");
       return;
     }
+    if (typeof Tesseract === "undefined") {
+      showPhotoStatus(
+        "The photo reader could not load. Check your internet connection and try again.",
+        "error"
+      );
+      return;
+    }
 
     readPhotoBtn.disabled = true;
-    showPhotoStatus("Reading the photo…", "info");
+    showPhotoStatus("Loading the reader…", "info");
     try {
-      const { base64, mediaType } = await fileToDownscaledJpeg(file, 2000, 0.85);
-      const rows = await callClaudeOcr(base64, mediaType, apiKey);
+      const img = await loadImage(file);
+      const canvas = preprocess(img, 1800);
+      const text = await ocrImage(canvas, function (p) {
+        showPhotoStatus("Reading the photo… " + Math.round(p * 100) + "%", "info");
+      });
+      const rows = parseRows(text, sheetDate.value);
       if (rows.length === 0) {
-        showPhotoStatus("No feedings were found in that photo.", "error");
+        showPhotoStatus(
+          "Couldn't read any rows. Try a clearer, straighter photo in good light, or add them manually.",
+          "error"
+        );
         reviewPanel.hidden = true;
       } else {
         renderReview(rows);
         showPhotoStatus(
-          `Found ${rows.length} feeding(s). Review and edit below, then add them.`,
+          `Read ${rows.length} row(s) — please check each one carefully before adding.`,
           "success"
         );
       }

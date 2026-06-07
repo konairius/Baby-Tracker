@@ -99,8 +99,16 @@
     if (hooks && hooks.onStatus) hooks.onStatus(state());
   }
 
-  // ── network ──
+  // True only when the user has actually enabled sharing (created or opened a
+  // shared space) AND a backend is configured. The external database is NEVER
+  // contacted unless this is true — see the guards below and in syncNow().
+  function sharingEnabled() {
+    return !!SYNC_URL && !!space;
+  }
+
+  // ── network (only ever reached when sharingEnabled() is true) ──
   async function serverGet() {
+    if (!sharingEnabled()) throw new Error("sharing is not enabled");
     const res = await fetch(SYNC_URL + "/space/" + encodeURIComponent(space.id), {
       method: "GET",
     });
@@ -109,6 +117,7 @@
     return res.json();
   }
   async function serverPut(expectedVersion, ciphertext) {
+    if (!sharingEnabled()) throw new Error("sharing is not enabled");
     const res = await fetch(SYNC_URL + "/space/" + encodeURIComponent(space.id), {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -124,8 +133,9 @@
 
   // ── sync cycle: pull → merge → push (with retry on conflict) ──
   async function syncNow() {
-    if (!space || !SYNC_URL || syncing) {
-      if (space && SYNC_URL) pendingPush = true;
+    // Hard gate: do nothing (no network) unless sharing is enabled.
+    if (!sharingEnabled() || syncing) {
+      if (sharingEnabled()) pendingPush = true;
       return;
     }
     syncing = true;

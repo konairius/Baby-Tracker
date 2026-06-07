@@ -58,6 +58,9 @@ automatically (per-entry, newest wins), so two people editing won't clobber each
   stores only ciphertext + a version number; it **cannot read your data** (zero-knowledge).
 - Anyone with the link has full access (no accounts). To revoke, create a new space and
   re-share.
+- **The backend is only ever contacted after you enable sharing** (create or open a shared
+  space). Plain single-device use makes zero network calls to it — the app stays fully
+  local and offline until you opt in.
 
 **Setup (one-time, by the site owner):** sharing is **off until you deploy the backend** —
 a tiny Cloudflare Worker + KV store. Follow [`worker/README.md`](worker/README.md) (about 5

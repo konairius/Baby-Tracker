@@ -41,10 +41,11 @@
   const pdfBtn = document.getElementById("pdf-btn");
   const photoBtn = document.getElementById("photo-btn");
   const photoPanel = document.getElementById("photo-panel");
+  const keySetup = document.getElementById("key-setup");
+  const keyReady = document.getElementById("key-ready");
   const apiKeyInput = document.getElementById("api-key");
   const saveKeyBtn = document.getElementById("save-key");
-  const clearKeyBtn = document.getElementById("clear-key");
-  const modelSelect = document.getElementById("model-select");
+  const changeKeyBtn = document.getElementById("change-key");
   const photoFile = document.getElementById("photo-file");
   const readPhotoBtn = document.getElementById("read-photo");
   const photoStatus = document.getElementById("photo-status");
@@ -54,7 +55,8 @@
   const discardReviewedBtn = document.getElementById("discard-reviewed");
 
   const KEY_STORAGE = "baby-food-tracker.apiKey";
-  const MODEL_STORAGE = "baby-food-tracker.model";
+  // Single fixed model — chosen for best handwriting accuracy. No UI needed.
+  const OCR_MODEL = "claude-opus-4-8";
 
   // --- Persistence ---
   function load() {
@@ -575,50 +577,51 @@
     photoStatus.hidden = false;
   }
 
-  // Load any saved key/model into the panel.
-  function loadApiSettings() {
+  function storedKey() {
     try {
-      apiKeyInput.value = localStorage.getItem(KEY_STORAGE) || "";
-      const m = localStorage.getItem(MODEL_STORAGE);
-      if (m) modelSelect.value = m;
+      return (localStorage.getItem(KEY_STORAGE) || "").trim();
     } catch (err) {
-      /* ignore storage errors */
+      return "";
     }
+  }
+
+  // Show the one-time key setup, or the "ready" view once a key exists.
+  function refreshKeyView() {
+    const hasKey = storedKey().length > 0;
+    keySetup.hidden = hasKey;
+    keyReady.hidden = !hasKey;
+    if (!hasKey) apiKeyInput.value = "";
   }
 
   photoBtn.addEventListener("click", function () {
     photoPanel.hidden = !photoPanel.hidden;
     if (!photoPanel.hidden) {
-      loadApiSettings();
+      refreshKeyView();
       photoPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   });
 
   saveKeyBtn.addEventListener("click", function () {
-    try {
-      localStorage.setItem(KEY_STORAGE, apiKeyInput.value.trim());
-      showPhotoStatus("API key saved in this browser.", "success");
-    } catch (err) {
-      showPhotoStatus("Could not save the key.", "error");
+    const key = apiKeyInput.value.trim();
+    if (!key) {
+      showPhotoStatus("Please paste your key first.", "error");
+      return;
     }
+    try {
+      localStorage.setItem(KEY_STORAGE, key);
+    } catch (err) {
+      showPhotoStatus("Could not save the key on this device.", "error");
+      return;
+    }
+    refreshKeyView();
+    showPhotoStatus("Saved — you can now read photos.", "success");
   });
 
-  clearKeyBtn.addEventListener("click", function () {
-    try {
-      localStorage.removeItem(KEY_STORAGE);
-    } catch (err) {
-      /* ignore */
-    }
-    apiKeyInput.value = "";
-    showPhotoStatus("API key cleared.", "info");
-  });
-
-  modelSelect.addEventListener("change", function () {
-    try {
-      localStorage.setItem(MODEL_STORAGE, modelSelect.value);
-    } catch (err) {
-      /* ignore */
-    }
+  changeKeyBtn.addEventListener("click", function () {
+    keySetup.hidden = false;
+    keyReady.hidden = true;
+    apiKeyInput.value = storedKey();
+    apiKeyInput.focus();
   });
 
   // Downscale the photo client-side to keep upload size and token cost sane,
@@ -653,7 +656,7 @@
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   }
 
-  async function callClaudeOcr(base64, mediaType, apiKey, model) {
+  async function callClaudeOcr(base64, mediaType, apiKey) {
     const schema = {
       type: "object",
       properties: {
@@ -701,7 +704,7 @@
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
-        model: model,
+        model: OCR_MODEL,
         max_tokens: 8000,
         output_config: { format: { type: "json_schema", schema: schema } },
         messages: [
@@ -760,10 +763,11 @@
   }
 
   readPhotoBtn.addEventListener("click", async function () {
-    const apiKey = apiKeyInput.value.trim();
+    const apiKey = storedKey();
     const file = photoFile.files && photoFile.files[0];
     if (!apiKey) {
-      showPhotoStatus("Enter your Anthropic API key first.", "error");
+      refreshKeyView();
+      showPhotoStatus("Please add your API key first.", "error");
       return;
     }
     if (!file) {
@@ -775,7 +779,7 @@
     showPhotoStatus("Reading the photo…", "info");
     try {
       const { base64, mediaType } = await fileToDownscaledJpeg(file, 2000, 0.85);
-      const rows = await callClaudeOcr(base64, mediaType, apiKey, modelSelect.value);
+      const rows = await callClaudeOcr(base64, mediaType, apiKey);
       if (rows.length === 0) {
         showPhotoStatus("No feedings were found in that photo.", "error");
         reviewPanel.hidden = true;

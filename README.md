@@ -24,18 +24,17 @@ For pen-and-paper tracking:
 
 1. Click **🖨 Tracking sheet (PDF)** to download a printable A4 sheet, and print it.
 2. Fill in feedings by hand during the day (Date, Time, Provided, Not consumed).
-3. Click **📷 Import from photo**, paste your [Anthropic API key](https://console.anthropic.com/settings/keys)
-   (stored only in your browser), choose a model, and snap/upload a photo of the sheet.
-4. The app sends the photo to the Claude API, which transcribes the rows. **Review and
-   edit** the extracted values, then click **Add to log**.
+3. Click **📷 Import from photo**. The first time, paste your
+   [Anthropic API key](https://console.anthropic.com/settings/keys) once and hit **Save** —
+   after that the app just shows "✓ Ready" and you only pick a photo.
+4. Snap/upload a photo of the sheet and click **Read photo**. The app transcribes the
+   rows; **review and edit** them, then click **Add to log**.
 
 Notes:
-- The API key and the photo are sent **directly to Anthropic** from your browser
-  (using the `anthropic-dangerous-direct-browser-access` header). No server is involved.
-- Handwriting recognition isn't perfect — always review before adding. The default
-  model is **Opus 4.8** (most accurate); Sonnet 4.6 and Haiku 4.5 are cheaper options.
+- The key (saved only on your device) and the photo are sent **directly to Anthropic**
+  from your browser — no server is involved. Calls are billed to your Anthropic account.
+- Handwriting recognition isn't perfect — always review before adding.
 - The photo is downscaled in-browser before upload to keep cost and size reasonable.
-- Calls to the Claude API are billed to your own Anthropic account.
 
 The PDF generator is dependency-free (it emits raw PDF), so it works offline too.
 

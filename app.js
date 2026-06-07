@@ -38,6 +38,24 @@
   const importFile = document.getElementById("import-file");
   const importMsg = document.getElementById("import-msg");
 
+  const pdfBtn = document.getElementById("pdf-btn");
+  const photoBtn = document.getElementById("photo-btn");
+  const photoPanel = document.getElementById("photo-panel");
+  const apiKeyInput = document.getElementById("api-key");
+  const saveKeyBtn = document.getElementById("save-key");
+  const clearKeyBtn = document.getElementById("clear-key");
+  const modelSelect = document.getElementById("model-select");
+  const photoFile = document.getElementById("photo-file");
+  const readPhotoBtn = document.getElementById("read-photo");
+  const photoStatus = document.getElementById("photo-status");
+  const reviewPanel = document.getElementById("review");
+  const reviewBody = document.getElementById("review-body");
+  const addReviewedBtn = document.getElementById("add-reviewed");
+  const discardReviewedBtn = document.getElementById("discard-reviewed");
+
+  const KEY_STORAGE = "baby-food-tracker.apiKey";
+  const MODEL_STORAGE = "baby-food-tracker.model";
+
   // --- Persistence ---
   function load() {
     try {
@@ -531,6 +549,292 @@
     reader.readAsText(file);
     // Reset so selecting the same file again re-triggers change.
     importFile.value = "";
+  });
+
+  // --- Printable tracking sheet (PDF) ---
+  pdfBtn.addEventListener("click", function () {
+    if (typeof window.generateTrackingSheetPdf !== "function") {
+      showImportMsg("Could not generate the PDF (script not loaded).", "error");
+      return;
+    }
+    const blob = window.generateTrackingSheetPdf();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "baby-food-tracking-sheet.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // --- Photo import (OCR via the Claude API) ---
+  function showPhotoStatus(msg, type) {
+    photoStatus.textContent = msg;
+    photoStatus.className = "photo-status " + (type || "");
+    photoStatus.hidden = false;
+  }
+
+  // Load any saved key/model into the panel.
+  function loadApiSettings() {
+    try {
+      apiKeyInput.value = localStorage.getItem(KEY_STORAGE) || "";
+      const m = localStorage.getItem(MODEL_STORAGE);
+      if (m) modelSelect.value = m;
+    } catch (err) {
+      /* ignore storage errors */
+    }
+  }
+
+  photoBtn.addEventListener("click", function () {
+    photoPanel.hidden = !photoPanel.hidden;
+    if (!photoPanel.hidden) {
+      loadApiSettings();
+      photoPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+
+  saveKeyBtn.addEventListener("click", function () {
+    try {
+      localStorage.setItem(KEY_STORAGE, apiKeyInput.value.trim());
+      showPhotoStatus("API key saved in this browser.", "success");
+    } catch (err) {
+      showPhotoStatus("Could not save the key.", "error");
+    }
+  });
+
+  clearKeyBtn.addEventListener("click", function () {
+    try {
+      localStorage.removeItem(KEY_STORAGE);
+    } catch (err) {
+      /* ignore */
+    }
+    apiKeyInput.value = "";
+    showPhotoStatus("API key cleared.", "info");
+  });
+
+  modelSelect.addEventListener("change", function () {
+    try {
+      localStorage.setItem(MODEL_STORAGE, modelSelect.value);
+    } catch (err) {
+      /* ignore */
+    }
+  });
+
+  // Downscale the photo client-side to keep upload size and token cost sane,
+  // and normalize to JPEG.
+  function fileToDownscaledJpeg(file, maxDim, quality) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg" });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not load that image."));
+      };
+      img.src = url;
+    });
+  }
+
+  function today() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+
+  async function callClaudeOcr(base64, mediaType, apiKey, model) {
+    const schema = {
+      type: "object",
+      properties: {
+        entries: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              date: { type: "string", description: "ISO date, YYYY-MM-DD" },
+              time: { type: "string", description: "24-hour time, HH:MM" },
+              provided: { type: "number", description: "millilitres provided" },
+              notConsumed: {
+                type: "number",
+                description: "millilitres left over / not consumed",
+              },
+            },
+            required: ["date", "time", "provided", "notConsumed"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["entries"],
+      additionalProperties: false,
+    };
+
+    const prompt =
+      "This image is a handwritten baby feeding tracker sheet. Each filled row " +
+      "records one feeding with columns: Date, Time, Provided (ml), and Not " +
+      "consumed (ml) (the amount left over). Extract every filled-in row. Rules: " +
+      "dates as YYYY-MM-DD; if a row omits the date, use the sheet's date header " +
+      "or the date from adjacent rows; if the year is missing assume " +
+      today() +
+      ". Times as 24-hour HH:MM. Amounts are millilitres as plain numbers. If " +
+      "'Not consumed' is blank, use 0. Skip the header row and any empty rows. " +
+      "Today's date is " +
+      today() +
+      ".";
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 8000,
+        output_config: { format: { type: "json_schema", schema: schema } },
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: mediaType, data: base64 },
+              },
+              { type: "text", text: prompt },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const errBody = await res.json();
+        detail = (errBody.error && errBody.error.message) || "";
+      } catch (e) {
+        /* ignore */
+      }
+      throw new Error("API error " + res.status + (detail ? ": " + detail : ""));
+    }
+
+    const data = await res.json();
+    const textBlock = (data.content || []).find((b) => b.type === "text");
+    if (!textBlock) throw new Error("No text returned by the model.");
+    const parsed = JSON.parse(textBlock.text);
+    return Array.isArray(parsed.entries) ? parsed.entries : [];
+  }
+
+  function renderReview(rows) {
+    reviewBody.innerHTML = "";
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input type="date" class="r-date" value="${row.date || ""}" /></td>
+        <td><input type="time" class="r-time" value="${row.time || ""}" /></td>
+        <td class="num"><input type="number" min="0" step="1" class="r-provided" value="${
+          row.provided != null ? row.provided : ""
+        }" /></td>
+        <td class="num"><input type="number" min="0" step="1" class="r-notconsumed" value="${
+          row.notConsumed != null ? row.notConsumed : 0
+        }" /></td>
+        <td><button type="button" class="review-remove" title="Remove">🗑️</button></td>`;
+      tr.querySelector(".review-remove").addEventListener("click", function () {
+        tr.remove();
+      });
+      reviewBody.appendChild(tr);
+    }
+    reviewPanel.hidden = rows.length === 0;
+  }
+
+  readPhotoBtn.addEventListener("click", async function () {
+    const apiKey = apiKeyInput.value.trim();
+    const file = photoFile.files && photoFile.files[0];
+    if (!apiKey) {
+      showPhotoStatus("Enter your Anthropic API key first.", "error");
+      return;
+    }
+    if (!file) {
+      showPhotoStatus("Choose a photo of the sheet first.", "error");
+      return;
+    }
+
+    readPhotoBtn.disabled = true;
+    showPhotoStatus("Reading the photo…", "info");
+    try {
+      const { base64, mediaType } = await fileToDownscaledJpeg(file, 2000, 0.85);
+      const rows = await callClaudeOcr(base64, mediaType, apiKey, modelSelect.value);
+      if (rows.length === 0) {
+        showPhotoStatus("No feedings were found in that photo.", "error");
+        reviewPanel.hidden = true;
+      } else {
+        renderReview(rows);
+        showPhotoStatus(
+          `Found ${rows.length} feeding(s). Review and edit below, then add them.`,
+          "success"
+        );
+      }
+    } catch (err) {
+      console.error("Photo OCR failed:", err);
+      showPhotoStatus(err.message || "Could not read the photo.", "error");
+    } finally {
+      readPhotoBtn.disabled = false;
+    }
+  });
+
+  addReviewedBtn.addEventListener("click", function () {
+    const trs = Array.from(reviewBody.querySelectorAll("tr"));
+    let added = 0;
+    let skipped = 0;
+    for (const tr of trs) {
+      const date = tr.querySelector(".r-date").value;
+      const time = tr.querySelector(".r-time").value;
+      const provided = parseFloat(tr.querySelector(".r-provided").value);
+      const notConsumed = parseFloat(tr.querySelector(".r-notconsumed").value);
+      if (
+        !date ||
+        !time ||
+        !Number.isFinite(provided) ||
+        provided < 0 ||
+        !Number.isFinite(notConsumed) ||
+        notConsumed < 0 ||
+        notConsumed > provided
+      ) {
+        skipped++;
+        continue;
+      }
+      entries.push({ id: uid(), date, time, provided, notConsumed });
+      added++;
+    }
+    if (added === 0) {
+      showPhotoStatus("No valid rows to add — check the highlighted fields.", "error");
+      return;
+    }
+    save();
+    render();
+    reviewPanel.hidden = true;
+    reviewBody.innerHTML = "";
+    photoFile.value = "";
+    const note = skipped > 0 ? ` (${skipped} row(s) skipped)` : "";
+    showPhotoStatus(`Added ${added} feeding(s)${note}.`, "success");
+  });
+
+  discardReviewedBtn.addEventListener("click", function () {
+    reviewPanel.hidden = true;
+    reviewBody.innerHTML = "";
+    showPhotoStatus("Discarded.", "info");
   });
 
   // --- Init ---

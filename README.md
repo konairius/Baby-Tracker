@@ -14,7 +14,30 @@ step, no server, no dependencies — just open it in a browser.
 - **Local persistence** — data is saved in the browser's `localStorage`, so it
   survives page reloads on the same device/browser.
 - **CSV import / export** — back up your data or move it between devices.
+- **Printable tracking sheet + photo import** — print a paper sheet, fill it in by
+  hand, then photograph it and let Claude read the rows into the app.
 - Input validation (e.g. not-consumed cannot exceed provided).
+
+## Track by hand, then import from a photo
+
+For pen-and-paper tracking:
+
+1. Click **🖨 Tracking sheet (PDF)** to download a printable A4 sheet, and print it.
+2. Fill in feedings by hand during the day (Date, Time, Provided, Not consumed).
+3. Click **📷 Import from photo**, paste your [Anthropic API key](https://console.anthropic.com/settings/keys)
+   (stored only in your browser), choose a model, and snap/upload a photo of the sheet.
+4. The app sends the photo to the Claude API, which transcribes the rows. **Review and
+   edit** the extracted values, then click **Add to log**.
+
+Notes:
+- The API key and the photo are sent **directly to Anthropic** from your browser
+  (using the `anthropic-dangerous-direct-browser-access` header). No server is involved.
+- Handwriting recognition isn't perfect — always review before adding. The default
+  model is **Opus 4.8** (most accurate); Sonnet 4.6 and Haiku 4.5 are cheaper options.
+- The photo is downscaled in-browser before upload to keep cost and size reasonable.
+- Calls to the Claude API are billed to your own Anthropic account.
+
+The PDF generator is dependency-free (it emits raw PDF), so it works offline too.
 
 ## CSV format
 
@@ -48,7 +71,8 @@ python3 -m http.server 8000
 | --- | --- |
 | `index.html` | Page structure (form + tables) |
 | `styles.css` | Styling |
-| `app.js` | Logic: state, persistence, validation, rendering |
+| `app.js` | Logic: state, persistence, validation, rendering, CSV, photo import |
+| `sheet-pdf.js` | Dependency-free generator for the printable tracking sheet |
 
 ## Notes
 

@@ -18,6 +18,9 @@ step, no server, no dependencies — just open it in a browser.
   hand, then photograph it; the rows are read **on your device** (no account or key).
 - **Encrypted sharing / multi-device sync** (optional) — share one baby's log with
   family via a private link; everyone stays in sync, end-to-end encrypted.
+- **Mobile-optimized** — on phones the tables become tap-friendly stacked cards
+  (no sideways scrolling), inputs won't trigger iOS zoom, and it can be added to the
+  home screen.
 - Input validation (e.g. not-consumed cannot exceed provided).
 
 ## Track by hand, then import from a photo

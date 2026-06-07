@@ -175,11 +175,11 @@
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${formatDate(entry.date)}</td>
-        <td>${entry.time}</td>
-        <td class="num">${fmt(entry.provided)}</td>
-        <td class="num">${fmt(entry.notConsumed)}</td>
-        <td class="num consumed">${fmt(consumed(entry))}</td>
+        <td data-label="Date">${formatDate(entry.date)}</td>
+        <td data-label="Time">${entry.time}</td>
+        <td class="num" data-label="Provided (ml)">${fmt(entry.provided)}</td>
+        <td class="num" data-label="Not consumed (ml)">${fmt(entry.notConsumed)}</td>
+        <td class="num consumed" data-label="Consumed (ml)">${fmt(consumed(entry))}</td>
         <td class="row-actions">
           <button class="icon-btn edit" data-id="${entry.id}" title="Edit" aria-label="Edit">✏️</button>
           <button class="icon-btn delete" data-id="${entry.id}" title="Delete" aria-label="Delete">🗑️</button>
@@ -232,11 +232,11 @@
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${formatDate(date)}</td>
-        <td class="num">${agg.count}</td>
-        <td class="num">${fmt(agg.provided)}</td>
-        <td class="num">${fmt(agg.notConsumed)}</td>
-        <td class="num consumed">${fmt(cons)}</td>`;
+        <td data-label="Date">${formatDate(date)}</td>
+        <td class="num" data-label="Feedings">${agg.count}</td>
+        <td class="num" data-label="Provided (ml)">${fmt(agg.provided)}</td>
+        <td class="num" data-label="Not consumed (ml)">${fmt(agg.notConsumed)}</td>
+        <td class="num consumed" data-label="Consumed (ml)">${fmt(cons)}</td>`;
       summaryBody.appendChild(tr);
     }
 
@@ -246,11 +246,11 @@
       const tr = document.createElement("tr");
       tr.className = "summary-total";
       tr.innerHTML = `
-        <td>All days</td>
-        <td class="num">${gCount}</td>
-        <td class="num">${fmt(gProvided)}</td>
-        <td class="num">${fmt(gNotConsumed)}</td>
-        <td class="num">${fmt(gCons)}</td>`;
+        <td data-label="">All days</td>
+        <td class="num" data-label="Feedings">${gCount}</td>
+        <td class="num" data-label="Provided (ml)">${fmt(gProvided)}</td>
+        <td class="num" data-label="Not consumed (ml)">${fmt(gNotConsumed)}</td>
+        <td class="num" data-label="Consumed (ml)">${fmt(gCons)}</td>`;
       summaryBody.appendChild(tr);
     }
   }
@@ -765,15 +765,15 @@
     for (const row of rows) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><input type="date" class="r-date" value="${row.date || ""}" /></td>
-        <td><input type="time" class="r-time" value="${row.time || ""}" /></td>
-        <td class="num"><input type="number" min="0" step="1" class="r-provided" value="${
+        <td data-label="Date"><input type="date" class="r-date" value="${row.date || ""}" /></td>
+        <td data-label="Time"><input type="time" class="r-time" value="${row.time || ""}" /></td>
+        <td class="num" data-label="Provided (ml)"><input type="number" min="0" step="1" class="r-provided" value="${
           row.provided !== "" && row.provided != null ? row.provided : ""
         }" /></td>
-        <td class="num"><input type="number" min="0" step="1" class="r-notconsumed" value="${
+        <td class="num" data-label="Not consumed (ml)"><input type="number" min="0" step="1" class="r-notconsumed" value="${
           row.notConsumed != null ? row.notConsumed : 0
         }" /></td>
-        <td><button type="button" class="review-remove" title="Remove">🗑️</button></td>`;
+        <td class="review-remove-cell"><button type="button" class="review-remove" title="Remove">🗑️ Remove</button></td>`;
       tr.querySelector(".review-remove").addEventListener("click", function () {
         tr.remove();
       });
